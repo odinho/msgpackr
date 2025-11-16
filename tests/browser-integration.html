@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>msgpackr Web Streams Browser Integration Tests</title>
+	<link rel="stylesheet" href="../node_modules/mocha/mocha.css">
+	<style>
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+			margin: 0;
+			padding: 20px;
+		}
+		#header {
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			color: white;
+			padding: 20px;
+			margin: -20px -20px 20px -20px;
+			border-radius: 0 0 8px 8px;
+		}
+		#header h1 {
+			margin: 0;
+			font-size: 24px;
+			font-weight: 600;
+		}
+		#header p {
+			margin: 8px 0 0 0;
+			opacity: 0.9;
+			font-size: 14px;
+		}
+		#environment-info {
+			background: #f7fafc;
+			border: 1px solid #e2e8f0;
+			border-radius: 6px;
+			padding: 15px;
+			margin-bottom: 20px;
+			font-size: 13px;
+		}
+		#environment-info h2 {
+			margin: 0 0 10px 0;
+			font-size: 16px;
+			color: #2d3748;
+		}
+		#environment-info .info-grid {
+			display: grid;
+			grid-template-columns: 150px 1fr;
+			gap: 8px;
+		}
+		#environment-info .label {
+			font-weight: 600;
+			color: #4a5568;
+		}
+		#environment-info .value {
+			color: #2d3748;
+		}
+		.status-badge {
+			display: inline-block;
+			padding: 2px 8px;
+			border-radius: 12px;
+			font-size: 12px;
+			font-weight: 600;
+			margin-left: 8px;
+		}
+		.status-badge.success {
+			background: #c6f6d5;
+			color: #22543d;
+		}
+		.status-badge.error {
+			background: #fed7d7;
+			color: #742a2a;
+		}
+	</style>
+</head>
+<body>
+	<div id="header">
+		<h1>🌐 msgpackr Web Streams Browser Integration Tests</h1>
+		<p>Testing MessagePack streaming with Web Streams API in a real browser environment</p>
+	</div>
+
+	<div id="environment-info">
+		<h2>Browser Environment</h2>
+		<div class="info-grid">
+			<span class="label">User Agent:</span>
+			<span class="value" id="user-agent"></span>
+
+			<span class="label">Platform:</span>
+			<span class="value" id="platform"></span>
+
+			<span class="label">ReadableStream:</span>
+			<span class="value" id="readable-stream"></span>
+
+			<span class="label">WritableStream:</span>
+			<span class="value" id="writable-stream"></span>
+
+			<span class="label">TransformStream:</span>
+			<span class="value" id="transform-stream"></span>
+
+			<span class="label">Buffer:</span>
+			<span class="value" id="buffer-support"></span>
+		</div>
+	</div>
+
+	<div id="mocha"></div>
+
+	<script src="../node_modules/mocha/mocha.js"></script>
+	<script src="../node_modules/chai/chai.js"></script>
+	<script>
+		mocha.setup('tdd');
+
+		// Display environment information
+		document.getElementById('user-agent').textContent = navigator.userAgent;
+		document.getElementById('platform').textContent = navigator.platform;
+
+		function checkAPI(name, exists) {
+			const elem = document.getElementById(name);
+			if (exists) {
+				elem.innerHTML = '✅ Supported <span class="status-badge success">YES</span>';
+			} else {
+				elem.innerHTML = '❌ Not supported <span class="status-badge error">NO</span>';
+			}
+		}
+
+		checkAPI('readable-stream', typeof ReadableStream !== 'undefined');
+		checkAPI('writable-stream', typeof WritableStream !== 'undefined');
+		checkAPI('transform-stream', typeof TransformStream !== 'undefined');
+		checkAPI('buffer-support', typeof Buffer !== 'undefined');
+	</script>
+
+	<!-- Load msgpackr modules as ES modules -->
+	<script type="module">
+		import { Packr, Unpackr } from '../index.js';
+		import { PackrStream, UnpackrStream } from '../web-stream.js';
+
+		// Make available globally for tests
+		window.msgpackr = { Packr, Unpackr, PackrStream, UnpackrStream };
+		window.chai = chai;
+
+		const assert = chai.assert;
+
+		suite('Browser Web Streams Integration Tests', function() {
+			// Verify Web Streams API is available
+			test('Web Streams API availability', () => {
+				assert.isDefined(ReadableStream, 'ReadableStream should be defined');
+				assert.isDefined(WritableStream, 'WritableStream should be defined');
+				assert.isDefined(TransformStream, 'TransformStream should be defined');
+			});
+
+			test('UnpackrStream and PackrStream functions are available', () => {
+				assert.isFunction(UnpackrStream, 'UnpackrStream should be a function');
+				assert.isFunction(PackrStream, 'PackrStream should be a function');
+			});
+
+			test('Create UnpackrStream transform stream', () => {
+				const stream = UnpackrStream();
+				assert.isDefined(stream, 'UnpackrStream should return a transform stream');
+				assert.isDefined(stream.readable, 'Transform stream should have readable side');
+				assert.isDefined(stream.writable, 'Transform stream should have writable side');
+			});
+
+			test('Create PackrStream transform stream', () => {
+				const stream = PackrStream();
+				assert.isDefined(stream, 'PackrStream should return a transform stream');
+				assert.isDefined(stream.readable, 'Transform stream should have readable side');
+				assert.isDefined(stream.writable, 'Transform stream should have writable side');
+			});
+
+			// Test with browser-native Uint8Array (not Buffer)
+			test('Unpack single value with pure Uint8Array', async () => {
+				const packr = new Packr();
+				const data = { browser: 'chrome', version: 120 };
+				const packed = packr.pack(data);
+
+				// Convert to pure Uint8Array (not Buffer)
+				const uint8 = new Uint8Array(packed);
+
+				const unpackStream = UnpackrStream();
+				const reader = new ReadableStream({
+					start(controller) {
+						controller.enqueue(uint8);
+						controller.close();
+					}
+				})
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				const result = await reader.read();
+				assert.isFalse(result.done);
+				assert.deepEqual(result.value, data);
+
+				const end = await reader.read();
+				assert.isTrue(end.done);
+			});
+
+			test('Unpack multiple values from browser stream', async () => {
+				const packr = new Packr();
+				const messages = [
+					{ type: 'init', timestamp: Date.now() },
+					{ type: 'data', payload: [1, 2, 3] },
+					{ type: 'close', reason: 'complete' }
+				];
+
+				// Pack each message separately
+				const packed = messages.map(m => packr.pack(m));
+
+				// Concatenate as Uint8Array
+				const totalLength = packed.reduce((sum, p) => sum + p.length, 0);
+				const combined = new Uint8Array(totalLength);
+				let offset = 0;
+				for (const p of packed) {
+					combined.set(p, offset);
+					offset += p.length;
+				}
+
+				const unpackStream = UnpackrStream();
+				const reader = new ReadableStream({
+					start(controller) {
+						controller.enqueue(combined);
+						controller.close();
+					}
+				})
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				const received = [];
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					received.push(value);
+				}
+
+				assert.equal(received.length, 3);
+				assert.deepEqual(received, messages);
+			});
+
+			test('Stream data in chunks simulating network', async () => {
+				const packr = new Packr();
+				const data = {
+					user: 'browser-test',
+					data: new Array(100).fill(0).map((_, i) => i),
+					nested: { deep: { value: 'test' } }
+				};
+				const packed = new Uint8Array(packr.pack(data));
+
+				const unpackStream = UnpackrStream();
+				const reader = new ReadableStream({
+					async start(controller) {
+						// Simulate network chunking - send in small pieces with delays
+						const chunkSize = 20;
+						for (let i = 0; i < packed.length; i += chunkSize) {
+							const chunk = packed.slice(i, i + chunkSize);
+							controller.enqueue(chunk);
+							// Small delay to simulate network latency
+							await new Promise(resolve => setTimeout(resolve, 5));
+						}
+						controller.close();
+					}
+				})
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				const result = await reader.read();
+				assert.isFalse(result.done);
+				assert.deepEqual(result.value, data);
+			});
+
+			test('Pack and unpack round-trip in browser', async () => {
+				const messages = [
+					{ id: 1, action: 'click', x: 100, y: 200 },
+					{ id: 2, action: 'scroll', delta: 50 },
+					{ id: 3, action: 'keypress', key: 'Enter' }
+				];
+
+				const packStream = PackrStream();
+				const unpackStream = UnpackrStream();
+
+				const received = [];
+				const reader = new ReadableStream({
+					start(controller) {
+						messages.forEach(msg => controller.enqueue(msg));
+						controller.close();
+					}
+				})
+					.pipeThrough(packStream)
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					received.push(value);
+				}
+
+				assert.deepEqual(received, messages);
+			});
+
+			test('Handle ArrayBuffer input (common in fetch API)', async () => {
+				const packr = new Packr();
+				const data = { source: 'fetch-api', body: 'response data' };
+				const packed = packr.pack(data);
+
+				// Convert to ArrayBuffer (like you'd get from fetch response.arrayBuffer())
+				const arrayBuffer = packed.buffer.slice(
+					packed.byteOffset,
+					packed.byteOffset + packed.byteLength
+				);
+
+				const unpackStream = UnpackrStream();
+				const reader = new ReadableStream({
+					start(controller) {
+						controller.enqueue(arrayBuffer);
+						controller.close();
+					}
+				})
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				const result = await reader.read();
+				assert.deepEqual(result.value, data);
+			});
+
+			test('Stream with records/structures', async () => {
+				const packr = new Packr({ useRecords: true });
+				const unpackr = new Unpackr({ useRecords: true });
+
+				const records = [
+					{ name: 'Alice', age: 30, city: 'NYC' },
+					{ name: 'Bob', age: 25, city: 'LA' },
+					{ name: 'Charlie', age: 35, city: 'SF' }
+				];
+
+				const packed = records.map(r => packr.pack(r));
+				const totalLength = packed.reduce((sum, p) => sum + p.length, 0);
+				const combined = new Uint8Array(totalLength);
+				let offset = 0;
+				for (const p of packed) {
+					combined.set(p, offset);
+					offset += p.length;
+				}
+
+				const unpackStream = UnpackrStream({ unpackr });
+				const reader = new ReadableStream({
+					start(controller) {
+						controller.enqueue(combined);
+						controller.close();
+					}
+				})
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				const received = [];
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					received.push(value);
+				}
+
+				assert.deepEqual(received, records);
+			});
+
+			test('Error handling in browser environment', async () => {
+				const invalidData = new Uint8Array([0xc1]); // Invalid MessagePack token
+
+				const unpackStream = UnpackrStream();
+
+				try {
+					const reader = new ReadableStream({
+						start(controller) {
+							controller.enqueue(invalidData);
+							controller.close();
+						}
+					})
+						.pipeThrough(unpackStream)
+						.getReader();
+
+					await reader.read();
+					assert.fail('Should have thrown an error');
+				} catch (error) {
+					assert.instanceOf(error, Error);
+				}
+			});
+
+			test('Backpressure with large dataset', async () => {
+				const packr = new Packr();
+				const largeDataset = Array.from({ length: 500 }, (_, i) => ({
+					id: i,
+					timestamp: Date.now(),
+					data: new Array(10).fill(i),
+					nested: { value: `item-${i}` }
+				}));
+
+				const packed = largeDataset.map(item => packr.pack(item));
+				const totalLength = packed.reduce((sum, p) => sum + p.length, 0);
+				const combined = new Uint8Array(totalLength);
+				let offset = 0;
+				for (const p of packed) {
+					combined.set(p, offset);
+					offset += p.length;
+				}
+
+				const unpackStream = UnpackrStream();
+				const received = [];
+
+				const reader = new ReadableStream({
+					start(controller) {
+						// Send in realistic chunks
+						let pos = 0;
+						const chunkSize = 1024;
+						while (pos < combined.length) {
+							controller.enqueue(combined.slice(pos, pos + chunkSize));
+							pos += chunkSize;
+						}
+						controller.close();
+					}
+				})
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					received.push(value);
+				}
+
+				assert.equal(received.length, largeDataset.length);
+				assert.deepEqual(received, largeDataset);
+			});
+
+			test('Piping through multiple transform streams', async () => {
+				const messages = [
+					{ seq: 1, data: 'first' },
+					{ seq: 2, data: 'second' },
+					{ seq: 3, data: 'third' }
+				];
+
+				// Create a custom transform that adds metadata
+				const addMetadata = new TransformStream({
+					transform(chunk, controller) {
+						controller.enqueue({ ...chunk, processed: true, timestamp: Date.now() });
+					}
+				});
+
+				const packStream = PackrStream();
+				const unpackStream = UnpackrStream();
+
+				const received = [];
+				const reader = new ReadableStream({
+					start(controller) {
+						messages.forEach(msg => controller.enqueue(msg));
+						controller.close();
+					}
+				})
+					.pipeThrough(addMetadata)
+					.pipeThrough(packStream)
+					.pipeThrough(unpackStream)
+					.getReader();
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					received.push(value);
+				}
+
+				assert.equal(received.length, 3);
+				received.forEach((item, i) => {
+					assert.equal(item.seq, messages[i].seq);
+					assert.equal(item.data, messages[i].data);
+					assert.isTrue(item.processed);
+					assert.isNumber(item.timestamp);
+				});
+			});
+		});
+
+		// Run tests after module loads
+		mocha.run();
+	</script>
+</body>
+</html>

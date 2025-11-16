@@ -53,24 +53,100 @@ receivingStream.on('data', (data) => {
 ```
 The `PackrStream` and `UnpackrStream` instances  will have also the record structure extension enabled by default (see below).
 
+### Web Streams (Browser)
+For browser environments, msgpackr provides Web Streams API compatible versions via the `msgpackr/web-stream` module. These work with the standard `ReadableStream`, `WritableStream`, and `TransformStream` APIs.
+
+**Unpacking streaming data from fetch:**
+```js
+import { UnpackrStream } from 'msgpackr/web-stream';
+
+const response = await fetch('/api/data.msgpack');
+const reader = response.body.pipeThrough(UnpackrStream()).getReader();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  console.log('Received:', value);
+}
+```
+
+**Packing and unpacking in a pipeline:**
+```js
+import { PackrStream, UnpackrStream } from 'msgpackr/web-stream';
+
+const readable = new ReadableStream({
+  start(controller) {
+    controller.enqueue({ id: 1, name: 'Alice' });
+    controller.enqueue({ id: 2, name: 'Bob' });
+    controller.close();
+  }
+});
+
+// Chain transformations
+for await (const value of readable.pipeThrough(PackrStream()).pipeThrough(UnpackrStream())) {
+  console.log(value); // Original objects
+}
+```
+
+**Custom options:**
+```js
+const unpackStream = UnpackrStream({ useRecords: true, moreTypes: true });
+```
+
+**Features:**
+- Handles chunked data split across multiple reads
+- Processes multiple MessagePack values per chunk
+- Automatic backpressure via Web Streams API
+- Compatible with fetch, WebSocket, and other stream sources
+
+**Browser compatibility:** Chrome 89+, Firefox 102+, Safari 14.1+, Edge 89+
+
+**Note:** Import from `msgpackr/web-stream` for browsers. The main module exports Node.js Transform streams.
+
 ## Deno and Bun Usage
 Msgpackr modules are standard ESM modules and can be loaded directly from the [deno.land registry for msgpackr](https://deno.land/x/msgpackr) for use in Deno or using the NPM module loader with `import { unpack } from 'npm:msgpackr'`. The standard pack/encode and unpack/decode functionality is available on Deno, like other platforms. msgpackr can be used like any other package on Bun.
 
 ## Browser Usage
-Msgpackr works as standalone JavaScript as well, and runs on modern browsers. It includes a bundled script, at `dist/index.js` for ease of direct loading:
+Msgpackr works as standalone JavaScript as well, and runs on modern browsers.
+
+**Using ES modules (recommended):**
+Modern browsers support ES modules natively. Use a bundler (Vite, Webpack, esbuild, etc.) or import maps:
+```html
+<script type="module">
+  import { pack, unpack } from './node_modules/msgpackr/index.js';
+  import { UnpackrStream } from './node_modules/msgpackr/web-stream.js';
+
+  const data = pack({ hello: 'world' });
+  console.log(unpack(data));
+</script>
+```
+
+With an import map (no bundler needed):
+```html
+<script type="importmap">
+{
+  "imports": {
+    "msgpackr": "./node_modules/msgpackr/index.js",
+    "msgpackr/web-stream": "./node_modules/msgpackr/web-stream.js"
+  }
+}
+</script>
+<script type="module">
+  import { pack, unpack } from 'msgpackr';
+  import { UnpackrStream } from 'msgpackr/web-stream';
+</script>
+```
+
+**Using UMD bundle (legacy):**
+For non-module environments, a bundled script is available at `dist/index.js`:
 ```html
 <script src="node_modules/msgpackr/dist/index.js"></script>
+<script>
+  const { pack, unpack } = msgpackr;
+</script>
 ```
 
-This is UMD based, and will register as a module if possible, or create a `msgpackr` global with all the exported functions.
-
-For module-based development, it is recommended that you directly import the module of interest, to minimize dependencies that get pulled into your application:
-```js
-import { unpack } from 'msgpackr/unpack' // if you only need to unpack
-```
-
-The package also includes a minified bundle in index.min.js. 
-Additionally, the package includes a version that excludes dynamic code evaluation called index-no-eval.js, for situations where Content Security Policy (CSP) forbids eval/Function in code. The dynamic evaluation provides important performance optimizations (for records), so is not recommended unless required by CSP policy.
+The package also includes `index.min.js` (minified) and `index-no-eval.js` (CSP-compatible without dynamic code evaluation, though slower for records).
 
 ## Structured Cloning
 You can also use msgpackr for [structured cloning](https://html.spec.whatwg.org/multipage/structured-data.html). By enabling the `structuredClone` option, you can include references to other objects or cyclic references, and object identity will be preserved. Structured cloning also enables preserving certain typed objects like `Error`, `Set`, `RegExp` and TypedArray instances. For example:

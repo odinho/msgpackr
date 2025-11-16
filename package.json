@@ -77,7 +77,11 @@
       "default": "./unpack.js"
     },
     "./unpack-no-eval": "./dist/unpack-no-eval.cjs",
-    "./index-no-eval": "./dist/index-no-eval.cjs"
+    "./index-no-eval": "./dist/index-no-eval.cjs",
+    "./web-stream": {
+      "types": "./web-stream.d.ts",
+      "default": "./web-stream.js"
+    }
   },
   "files": [
     "/dist",
